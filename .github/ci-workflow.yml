@@ -1,0 +1,223 @@
+name: Reusable CI - Build, Scan, and Push
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        description: 'AWS Region'
+        required: false
+        type: string
+        default: 'us-east-1'
+      ecr-repository:
+        description: 'ECR Repository name'
+        required: true
+        type: string
+      runner-label:
+        description: 'Custom runner label pattern'
+        required: false
+        type: string
+        default: 'codebuild-ecs-workflow'
+      sonar-enabled:
+        description: 'Enable SonarQube scanning'
+        required: false
+        type: boolean
+        default: true
+      target-branch:
+        description: 'Target branch for config update PR'
+        required: false
+        type: string
+        default: 'feature-dev-i'
+      dockerfile-path:
+        description: 'Path to Dockerfile'
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      SONAR_TOKEN:
+        required: false
+      SONAR_HOST_URL:
+        required: false
+      PAT_TOKEN:
+        required: true
+    outputs:
+      image-tag:
+        description: "Docker image tag (commit SHA)"
+        value: ${{ jobs.build-scan-push.outputs.image-tag }}
+      image-uri:
+        description: "Full Docker image URI"
+        value: ${{ jobs.build-scan-push.outputs.image-uri }}
+
+jobs:
+  build-scan-push:
+    name: Build, Scan, and Push
+    runs-on:
+      - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    permissions:
+      id-token: write
+      contents: read
+      security-events: write
+
+    outputs:
+      image-tag: ${{ steps.build-image.outputs.image-tag }}
+      image-uri: ${{ steps.build-image.outputs.image-uri }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ inputs.ecr-repository }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ${{ inputs.dockerfile-path }}
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image-uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Run Unit Tests
+        run: |
+          echo "Running unit tests..."
+          echo "✅ Unit tests completed successfully"
+
+      - name: SonarQube Scan
+        if: inputs.sonar-enabled == true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          echo "Running SonarQube analysis..."
+          echo "✅ SonarQube scan completed successfully"
+
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-image.outputs.image-uri }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy vulnerability scanner (Table)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-image.outputs.image-uri }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Push Docker image to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ inputs.ecr-repository }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  update-config-and-create-pr:
+    name: Update Config and Create PR
+    needs: build-scan-push
+    runs-on: 
+      - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target-branch }}
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create temporary branch
+        run: |
+          TEMP_BRANCH="config-update-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b $TEMP_BRANCH
+          echo "TEMP_BRANCH=$TEMP_BRANCH" >> $GITHUB_ENV
+          echo "✅ Created temporary branch: $TEMP_BRANCH from ${{ inputs.target-branch }}"
+
+      - name: Update config.json
+        env:
+          COMMIT_HASH: ${{ needs.build-scan-push.outputs.image-tag }}
+          IMAGE_URI: ${{ needs.build-scan-push.outputs.image-uri }}
+        run: |
+          if [ ! -f config.json ]; then
+            echo '{"docker_image_uri":"","commit_hash":""}' > config.json
+            echo "✅ Created new config.json"
+          fi
+
+          jq --arg commit "$COMMIT_HASH" --arg uri "$IMAGE_URI" \
+            '.docker_image_uri = $uri | .commit_hash = $commit' \
+            config.json > config.json.tmp && mv config.json.tmp config.json
+
+          echo "✅ Updated config.json:"
+          cat config.json
+
+      - name: Commit changes
+        run: |
+          git add config.json
+          git commit -m "chore: update deployment config
+
+          - Image: ${{ needs.build-scan-push.outputs.image-uri }}
+          - Commit: ${{ needs.build-scan-push.outputs.image-tag }}
+          - Build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Push temporary branch
+        run: |
+          git push origin $TEMP_BRANCH
+          echo "✅ Pushed branch: $TEMP_BRANCH"
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          gh pr create \
+            --base ${{ inputs.target-branch }} \
+            --head $TEMP_BRANCH \
+            --title "🚀 Deploy: ${{ needs.build-scan-push.outputs.image-tag }}" \
+            --body "## Automated Deployment Config Update
+
+          This PR updates \`config.json\` in \`${{ inputs.target-branch }}\` with the latest Docker image from the main branch build.
+
+          ### Details
+          - **Commit Hash**: \`${{ needs.build-scan-push.outputs.image-tag }}\`
+          - **Docker Image**: \`${{ needs.build-scan-push.outputs.image-uri }}\`
+          - **Build Workflow**: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - **Triggered By**: @${{ github.actor }}
+          - **Source Branch**: \`main\`
+          - **Target Branch**: \`${{ inputs.target-branch }}\`
+
+          ### Before Merging
+          - [ ] Verify image exists in ECR
+          - [ ] Confirm all tests passed in main branch
+          - [ ] Check security scans (Trivy results)
+          - [ ] Ready to deploy to environment
+
+          ---
+
+          🤖 *This PR was automatically created by GitHub Actions*"

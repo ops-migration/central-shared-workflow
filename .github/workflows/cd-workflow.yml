@@ -36,7 +36,7 @@ on:
         description: 'Custom runner label pattern'
         required: false
         type: string
-        default: 'codebuild-ecs-workflow'
+        default: 'codebuild-shared-workflow'
 
 jobs:
   prepare:

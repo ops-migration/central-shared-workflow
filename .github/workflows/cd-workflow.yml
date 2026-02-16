@@ -89,7 +89,7 @@ jobs:
         id: update-stack
         run: |
           echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
-          echo "Docker Image URI: ${{ needs.prepare.outputs.docker-image-uri }}"
+          #echo "Docker Image URI: ${{ needs.prepare.outputs.docker-image-uri }}"
 
           aws cloudformation deploy --template-file iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
           
@@ -105,14 +105,14 @@ jobs:
           #     exit 0
           #   }
           
-          echo "⏳ Waiting for stack update to complete..."
-          aws cloudformation wait stack-update-complete \
-            --stack-name ${{ inputs.cf-stack-name }} \
-            --region ${{ inputs.aws-region }} || {
-              echo "ℹ️ Stack update completed with no changes"
-            }
+          # echo "⏳ Waiting for stack update to complete..."
+          # aws cloudformation wait stack-update-complete \
+          #   --stack-name ${{ inputs.cf-stack-name }} \
+          #   --region ${{ inputs.aws-region }} || {
+          #     echo "ℹ️ Stack update completed with no changes"
+          #   }
           
-          echo "✅ CloudFormation stack updated successfully"
+          # echo "✅ CloudFormation stack updated successfully"
       
       # - name: Get Updated Resources
       #   id: get-resources

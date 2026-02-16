@@ -106,7 +106,7 @@ jobs:
           echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
           echo "Docker Image URI: ${{ needs.prepare.outputs.docker-image-uri }}"
 
-          aws cloudformation deploy --template-file /iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
+          aws cloudformation deploy --template-file iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
           
           # aws cloudformation update-stack \
           #   --stack-name ${{ inputs.cf-stack-name }} \

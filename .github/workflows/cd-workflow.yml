@@ -39,7 +39,7 @@ on:
         default: 'codebuild-shared-workflow'
 
 jobs:
-  prepare:
+  deploy:
     name: Prepare Deployment
     runs-on:
       - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -84,21 +84,6 @@ jobs:
           echo "✅ Configuration loaded successfully"
           echo "Docker Image URI: $DOCKER_IMAGE_URI"
           echo "Commit Hash: $COMMIT_HASH"
-
-
-
-  deploy:
-    name: Deploy to ECS via CloudFormation
-    needs: prepare
-    runs-on:
-      - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
-    
-    permissions:
-      contents: read
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
       
       - name: Update CloudFormation Stack
         id: update-stack

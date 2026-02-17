@@ -3,6 +3,11 @@ name: Reusable CD - Deploy to Amazon ECS
 on:
   workflow_call:
     inputs:
+      aws-region:
+        description: 'AWS Region'
+        required: false
+        type: string
+        default: 'us-east-1'
       ecs-cluster:
         description: 'ECS Cluster name'
         required: true
@@ -38,7 +43,6 @@ jobs:
     name: Deploy to ECS
     runs-on:
       - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
-    environment: ${{ inputs.environment-name }}
     
     permissions:
       contents: read
@@ -51,7 +55,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        
       - name: Read configuration
         id: read-config
         run: |
@@ -90,16 +94,16 @@ jobs:
           # Determine template file based on target-env
           case "${{ inputs.target-env }}" in
             "dev")
-              TEMPLATE_FILE="iac/aws/us-east-1/dev.yaml"
+              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/dev.yaml"
               ;;
             "qa")
-              TEMPLATE_FILE="iac/aws/us-east-1/qa.yaml"
+              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/qa.yaml"
               ;;
             "stage")
-              TEMPLATE_FILE="iac/aws/us-east-1/stage.yaml"
+              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/stage.yaml"
               ;;
             "prod")
-              TEMPLATE_FILE="iac/aws/us-east-1/prod.yaml"
+              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/prod.yaml"
               ;;
             *)
               echo "❌ Error: Unsupported target-env '${{ inputs.target-env }}'. Must be dev, qa, stage, or prod."
@@ -112,7 +116,7 @@ jobs:
           aws cloudformation deploy \
             --template-file "$TEMPLATE_FILE" \
             --stack-name "${{ inputs.cf-stack-name }}" \
-            --region "us-east-1" \
+            --region "${{ inputs.aws-region }}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               DockerImageUri="${{ steps.read-config.outputs.dockerImageUri }}" \

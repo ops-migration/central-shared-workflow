@@ -3,11 +3,6 @@ name: Reusable CD - Deploy to Amazon ECS
 on:
   workflow_call:
     inputs:
-      aws-region:
-        description: 'AWS Region'
-        required: false
-        type: string
-        default: 'us-east-1'
       ecs-cluster:
         description: 'ECS Cluster name'
         required: true
@@ -40,12 +35,14 @@ on:
 
 jobs:
   deploy:
-    name: Prepare Deployment
+    name: Deploy to ECS
     runs-on:
       - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+    environment: ${{ inputs.environment-name }}
     
     permissions:
       contents: read
+      id-token: write
     
     outputs:
       docker-image-uri: ${{ steps.read-config.outputs.dockerImageUri }}
@@ -89,9 +86,48 @@ jobs:
         id: update-stack
         run: |
           echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
+          
+          # Determine template file based on target-env
+          case "${{ inputs.target-env }}" in
+            "dev")
+              TEMPLATE_FILE="iac/aws/us-east-1/dev.yaml"
+              ;;
+            "qa")
+              TEMPLATE_FILE="iac/aws/us-east-1/qa.yaml"
+              ;;
+            "stage")
+              TEMPLATE_FILE="iac/aws/us-east-1/stage.yaml"
+              ;;
+            "prod")
+              TEMPLATE_FILE="iac/aws/us-east-1/prod.yaml"
+              ;;
+            *)
+              echo "❌ Error: Unsupported target-env '${{ inputs.target-env }}'. Must be dev, qa, stage, or prod."
+              exit 1
+              ;;
+          esac
+          
+          echo "📄 Using template: $TEMPLATE_FILE"
+          
+          aws cloudformation deploy \
+            --template-file "$TEMPLATE_FILE" \
+            --stack-name "${{ inputs.cf-stack-name }}" \
+            --region "us-east-1" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              DockerImageUri="${{ steps.read-config.outputs.dockerImageUri }}" \
+              CommitHash="${{ steps.read-config.outputs.commitHash }}"
+          
+          echo "✅ CloudFormation stack updated successfully"
+      
+      
+      # - name: Update CloudFormation Stack
+      #   id: update-stack
+      #   run: |
+      #     echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
           #echo "Docker Image URI: ${{ needs.prepare.outputs.docker-image-uri }}"
 
-          aws cloudformation deploy --template-file iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
+          # aws cloudformation deploy --template-file iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
           
           # aws cloudformation update-stack \
           #   --stack-name ${{ inputs.cf-stack-name }} \

@@ -46,7 +46,7 @@ jobs:
     
     permissions:
       contents: read
-      id-token: write
+      id-token: none
     
     outputs:
       docker-image-uri: ${{ steps.read-config.outputs.dockerImageUri }}

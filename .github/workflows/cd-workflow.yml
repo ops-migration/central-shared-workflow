@@ -46,7 +46,7 @@ jobs:
     
     permissions:
       contents: read
-      id-token: none
+      id-token: write
     
     outputs:
       docker-image-uri: ${{ steps.read-config.outputs.dockerImageUri }}
@@ -97,95 +97,7 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               DockerImageUri="${{ steps.read-config.outputs.dockerImageUri }}" \
-              CommitHash="${{ steps.read-config.outputs.commitHash }}"
+              CommitHash="${{ steps.read-config.outputs.commitHash }}" \
+              EnvironmentUrl="${{ inputs.environment-url }}"
           
           echo "✅ CloudFormation stack updated successfully"
-      
-      
-      # - name: Update CloudFormation Stack
-      #   id: update-stack
-      #   run: |
-      #     echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
-          #echo "Docker Image URI: ${{ needs.prepare.outputs.docker-image-uri }}"
-
-          # aws cloudformation deploy --template-file iac/aws/us-east-1/dev.yaml --stack-name my-new-stack --region us-east-1
-          
-          # aws cloudformation update-stack \
-          #   --stack-name ${{ inputs.cf-stack-name }} \
-          #   --use-previous-template \
-          #   --parameters \
-          #     ParameterKey=DockerImageUri,ParameterValue="${{ needs.prepare.outputs.docker-image-uri }}" \
-          #     ParameterKey=CommitHash,ParameterValue="${{ needs.prepare.outputs.commit-hash }}" \
-          #   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-          #   --region ${{ inputs.aws-region }} || {
-          #     echo "⚠️ No changes detected or stack update failed"
-          #     exit 0
-          #   }
-          
-          # echo "⏳ Waiting for stack update to complete..."
-          # aws cloudformation wait stack-update-complete \
-          #   --stack-name ${{ inputs.cf-stack-name }} \
-          #   --region ${{ inputs.aws-region }} || {
-          #     echo "ℹ️ Stack update completed with no changes"
-          #   }
-          
-          # echo "✅ CloudFormation stack updated successfully"
-      
-      # - name: Get Updated Resources
-      #   id: get-resources
-      #   run: |
-      #     echo "📋 Fetching updated resource information..."
-          
-      #     TASK_DEF_ARN=$(aws cloudformation describe-stacks \
-      #       --stack-name ${{ inputs.cf-stack-name }} \
-      #       --query 'Stacks[0].Outputs[?OutputKey==`TaskDefinitionArn`].OutputValue' \
-      #       --output text \
-      #       --region ${{ inputs.aws-region }})
-          
-      #     echo "task-def-arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
-      #     echo "Task Definition: $TASK_DEF_ARN"
-      
-      # - name: Verify ECS Service Deployment
-      #   run: |
-      #     echo "🔍 Verifying ECS service deployment..."
-          
-      #     aws ecs wait services-stable \
-      #       --cluster ${{ inputs.ecs-cluster }} \
-      #       --services ${{ inputs.ecs-service }} \
-      #       --region ${{ inputs.aws-region }}
-          
-      #     echo "✅ Service is stable"
-      
-      # - name: Deployment Summary
-      #   run: |
-      #     echo "🎉 Deployment completed successfully!"
-      #     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      #     echo "Branch: ${{ github.ref_name }}"
-      #     echo "Environment: ${{ inputs.target-env }}"
-      #     echo "Commit: ${{ github.sha }}"
-      #     echo "Stack: ${{ inputs.cf-stack-name }}"
-      #     echo "Cluster: ${{ inputs.ecs-cluster }}"
-      #     echo "Service: ${{ inputs.ecs-service }}"
-      #     echo "Task Definition: ${{ steps.get-resources.outputs.task-def-arn }}"
-      #     echo "Docker Image: ${{ needs.prepare.outputs.docker-image-uri }}"
-      #     echo "Commit Hash: ${{ needs.prepare.outputs.commit-hash }}"
-      #     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-      #     echo ""
-      #     echo "📊 Service Status:"
-      #     aws ecs describe-services \
-      #       --cluster ${{ inputs.ecs-cluster }} \
-      #       --services ${{ inputs.ecs-service }} \
-      #       --region ${{ inputs.aws-region }} \
-      #       --query 'services[0].[serviceName,status,runningCount,desiredCount,deployments[0].status]' \
-      #       --output table
-      
-      # - name: Deployment Notification
-      #   if: always()
-      #   run: |
-      #     if [ "${{ job.status }}" == "success" ]; then
-      #       echo "✅ Deployment successful to ${{ inputs.target-env }}!"
-      #     else
-      #       echo "❌ Deployment failed!"
-      #       exit 1
-      #     fi

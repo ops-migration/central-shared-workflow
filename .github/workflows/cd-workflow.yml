@@ -89,32 +89,9 @@ jobs:
       - name: Update CloudFormation Stack
         id: update-stack
         run: |
-          echo "🚀 Updating CloudFormation stack: ${{ inputs.cf-stack-name }}"
-          
-          # Determine template file based on target-env
-          case "${{ inputs.target-env }}" in
-            "dev")
-              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/dev.yaml"
-              ;;
-            "qa")
-              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/qa.yaml"
-              ;;
-            "stage")
-              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/stage.yaml"
-              ;;
-            "prod")
-              TEMPLATE_FILE="iac/aws/${{ inputs.aws-region }}/prod.yaml"
-              ;;
-            *)
-              echo "❌ Error: Unsupported target-env '${{ inputs.target-env }}'. Must be dev, qa, stage, or prod."
-              exit 1
-              ;;
-          esac
-          
-          echo "📄 Using template: $TEMPLATE_FILE"
           
           aws cloudformation deploy \
-            --template-file "$TEMPLATE_FILE" \
+            --template-file iac/aws/us-east-1/stack.yaml \
             --stack-name "${{ inputs.cf-stack-name }}" \
             --region "${{ inputs.aws-region }}" \
             --capabilities CAPABILITY_NAMED_IAM \

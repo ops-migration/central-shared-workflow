@@ -36,8 +36,7 @@ jobs:
             --template-file iac/aws/us-east-1/vpc.yaml \
             --stack-name "${{ inputs.cf-stack-name }}" \
             --region "${{ inputs.aws-region }}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
+            --capabilities CAPABILITY_NAMED_IAM
 
           
           echo "✅ CloudFormation stack updated successfully" 

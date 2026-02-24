@@ -100,4 +100,4 @@ jobs:
               CommitHash="${{ steps.read-config.outputs.commitHash }}" \
               EnvironmentUrl="${{ inputs.environment-url }}"
           
-          echo "✅ CloudFormation stack updated successfully"
+          echo "✅ CloudFormation stack updated successfully" 

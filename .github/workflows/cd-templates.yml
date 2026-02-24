@@ -8,6 +8,9 @@ on:
         required: false
         type: string
         default: 'us-east-1'
+      template-file:
+        required: true
+        type: string        
       cf-stack-name:
         description: 'CloudFormation Stack name'
         required: true
@@ -36,16 +39,12 @@ jobs:
         run: |
           
           aws cloudformation deploy \
-            --template-file iac/aws/us-east-1/vpc.yaml \
+            --template-file iac/aws/us-east-1/${{ inputs.template-file }} \
             --stack-name "${{ inputs.cf-stack-name }}" \
             --region "${{ inputs.aws-region }}" \
             --capabilities CAPABILITY_NAMED_IAM
 
-          aws cloudformation deploy \
-            --template-file iac/aws/us-east-1/ecs.yaml \
-            --stack-name "${{ inputs.cf-stack-name }}" \
-            --region "${{ inputs.aws-region }}" \
-            --capabilities CAPABILITY_NAMED_IAM            
+         
 
           
           echo "✅ CloudFormation stack updated successfully" 

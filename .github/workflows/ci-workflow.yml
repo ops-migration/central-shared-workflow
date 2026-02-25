@@ -152,6 +152,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results-rails.sarif'
+          category: trivy-rails
 
       - name: Scan Rails image (Table)
         uses: aquasecurity/trivy-action@master
@@ -192,6 +193,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results-nginx.sarif'
+          category: trivy-nginx
 
       - name: Scan Nginx image (Table)
         if: steps.set-mode.outputs.deploymentMode == 'double'

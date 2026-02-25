@@ -2,15 +2,7 @@ name: Reusable CD - Deploy to Amazon ECS
 
 on:
   workflow_call:
-    inputs:
-      aws-region:
-        description: 'AWS Region'
-        required: false
-        type: string
-        default: 'us-east-1'
-      template-file:
-        required: true
-        type: string        
+    inputs:       
       cf-stack-name:
         description: 'CloudFormation Stack name'
         required: true
@@ -39,12 +31,10 @@ jobs:
         run: |
           
           aws cloudformation deploy \
-            --template-file iac/aws/us-east-1/${{ inputs.template-file }} \
+            --template-file iac/aws/us-east-1/stack.yml \
             --stack-name "${{ inputs.cf-stack-name }}" \
-            --region "${{ inputs.aws-region }}" \
+            --region "us-east-1" \
             --capabilities CAPABILITY_NAMED_IAM
 
-         
-
-          
+        
           echo "✅ CloudFormation stack updated successfully" 

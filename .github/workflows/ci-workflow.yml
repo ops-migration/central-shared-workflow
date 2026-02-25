@@ -31,7 +31,6 @@ on:
         description: 'Target branch for config update PR'
         required: false
         type: string
-        default: 'feature-dev-i'
       dockerfile-path:
         description: 'Path to Rails Dockerfile'
         required: false

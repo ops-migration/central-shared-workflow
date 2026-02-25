@@ -31,7 +31,7 @@ jobs:
         run: |
           
           aws cloudformation deploy \
-            --template-file iac/aws/us-east-1/stack.yml \
+            --template-file iac/aws/us-east-1/stack.yaml \
             --stack-name "${{ inputs.cf-stack-name }}" \
             --region "us-east-1" \
             --capabilities CAPABILITY_NAMED_IAM

@@ -18,60 +18,90 @@ jobs:
     name: Deploy to ECS
     runs-on:
       - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
-    
+
     permissions:
       contents: read
       id-token: write
-    
+
     outputs:
-      docker-image-uri: ${{ steps.read-config.outputs.dockerImageUri }}
+      rails-image-uri: ${{ steps.read-config.outputs.railsImageUri }}
+      nginx-image-uri: ${{ steps.read-config.outputs.nginxImageUri }}
       commit-hash: ${{ steps.read-config.outputs.commitHash }}
-    
+      deployment-mode: ${{ steps.read-config.outputs.deploymentMode }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Read configuration
         id: read-config
         run: |
           echo "📖 Reading configuration from config.json"
-          
+
           if [ ! -f config.json ]; then
             echo "❌ Error: config.json not found!!!"
             exit 1
           fi
-          
-          DOCKER_IMAGE_URI=$(jq -r '.docker_image_uri' config.json)
-          COMMIT_HASH=$(jq -r '.commit_hash' config.json)
-          
-          if [ "$DOCKER_IMAGE_URI" == "null" ] || [ -z "$DOCKER_IMAGE_URI" ]; then
-            echo "❌ Error: docker_image_uri is missing in config.json"
-            exit 1
-          fi
-          
-          if [ "$COMMIT_HASH" == "null" ] || [ -z "$COMMIT_HASH" ]; then
+
+          # ── Read values (will be "null" string if key missing) ─────────────
+          RAILS_IMAGE_URI=$(jq -r '.rails_image_uri // empty' config.json)
+          NGINX_IMAGE_URI=$(jq -r '.nginx_image_uri // empty' config.json)
+          COMMIT_HASH=$(jq -r '.commit_hash // empty' config.json)
+
+          # ── commit_hash is always required ─────────────────────────────────
+          if [ -z "$COMMIT_HASH" ]; then
             echo "❌ Error: commit_hash is missing in config.json"
             exit 1
           fi
-          
-          echo "dockerImageUri=$DOCKER_IMAGE_URI" >> $GITHUB_OUTPUT
+
+          # ── rails_image_uri is always required ─────────────────────────────
+          if [ -z "$RAILS_IMAGE_URI" ]; then
+            echo "❌ Error: rails_image_uri is missing in config.json"
+            exit 1
+          fi
+
+          # ── Detect single vs double container mode ─────────────────────────
+          if [ -n "$NGINX_IMAGE_URI" ]; then
+            DEPLOYMENT_MODE="double"
+            echo "🐳 Deployment mode: DOUBLE container (Rails + Nginx)"
+          else
+            DEPLOYMENT_MODE="single"
+            echo "🐳 Deployment mode: SINGLE container (Rails only)"
+          fi
+
+          # ── Export outputs ─────────────────────────────────────────────────
+          echo "railsImageUri=$RAILS_IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "nginxImageUri=$NGINX_IMAGE_URI" >> $GITHUB_OUTPUT
           echo "commitHash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-          
-          echo "✅ Configuration loaded successfully"
-          echo "Docker Image URI: $DOCKER_IMAGE_URI"
-          echo "Commit Hash: $COMMIT_HASH"
-      
+          echo "deploymentMode=$DEPLOYMENT_MODE" >> $GITHUB_OUTPUT
+
+          echo "✅ Config loaded | Mode: $DEPLOYMENT_MODE"
+          echo "   Rails Image : $RAILS_IMAGE_URI"
+          echo "   Nginx Image : ${NGINX_IMAGE_URI:-'(not set)'}"
+          echo "   Commit Hash : $COMMIT_HASH"
+
       - name: Update CloudFormation Stack
         id: update-stack
         run: |
-          
+          DEPLOYMENT_MODE="${{ steps.read-config.outputs.deploymentMode }}"
+          RAILS_IMAGE="${{ steps.read-config.outputs.railsImageUri }}"
+          NGINX_IMAGE="${{ steps.read-config.outputs.nginxImageUri }}"
+          COMMIT_HASH="${{ steps.read-config.outputs.commitHash }}"
+
+          # ── Build parameter overrides based on mode ────────────────────────
+          if [ "$DEPLOYMENT_MODE" == "double" ]; then
+            echo "🚀 Deploying with Rails + Nginx images..."
+            PARAM_OVERRIDES="RailsImage=$RAILS_IMAGE NginxImage=$NGINX_IMAGE CommitHash=$COMMIT_HASH"
+          else
+            echo "🚀 Deploying with Rails image only..."
+            PARAM_OVERRIDES="RailsImage=$RAILS_IMAGE CommitHash=$COMMIT_HASH"
+          fi
+
           aws cloudformation deploy \
             --template-file iac/aws/us-east-1/stack.yaml \
             --stack-name "${{ inputs.cf-stack-name }}" \
             --region "us-east-1" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              DockerImageUri="${{ steps.read-config.outputs.dockerImageUri }}" \
-              CommitHash="${{ steps.read-config.outputs.commitHash }}"
-          
-          echo "✅ CloudFormation stack updated successfully" 
+            --parameter-overrides $PARAM_OVERRIDES
+
+          echo "✅ CloudFormation stack updated successfully | Mode: $DEPLOYMENT_MODE"

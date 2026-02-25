@@ -9,9 +9,14 @@ on:
         type: string
         default: 'us-east-1'
       ecr-repository:
-        description: 'ECR Repository name'
+        description: 'ECR Repository name for Rails image (always required)'
         required: true
         type: string
+      ecr-repository-nginx:
+        description: 'ECR Repository name for Nginx image (only for double container repos)'
+        required: false
+        type: string
+        default: ''
       runner-label:
         description: 'Custom runner label pattern'
         required: false
@@ -28,10 +33,16 @@ on:
         type: string
         default: 'feature-dev-i'
       dockerfile-path:
-        description: 'Path to Dockerfile'
+        description: 'Path to Rails Dockerfile'
         required: false
         type: string
         default: '.'
+      dockerfile-path-nginx:
+        description: 'Path to Nginx Dockerfile (only for double container repos)'
+        required: false
+        type: string
+        default: './nginx'
+
     secrets:
       SONAR_TOKEN:
         required: false
@@ -39,13 +50,20 @@ on:
         required: false
       PAT_TOKEN:
         required: true
+
     outputs:
       image-tag:
         description: "Docker image tag (commit SHA)"
         value: ${{ jobs.build-scan-push.outputs.image-tag }}
-      image-uri:
-        description: "Full Docker image URI"
-        value: ${{ jobs.build-scan-push.outputs.image-uri }}
+      rails-image-uri:
+        description: "Full Rails Docker image URI"
+        value: ${{ jobs.build-scan-push.outputs.rails-image-uri }}
+      nginx-image-uri:
+        description: "Full Nginx Docker image URI (empty for single container repos)"
+        value: ${{ jobs.build-scan-push.outputs.nginx-image-uri }}
+      deployment-mode:
+        description: "Deployment mode: single or double"
+        value: ${{ jobs.build-scan-push.outputs.deployment-mode }}
 
 jobs:
   build-scan-push:
@@ -59,8 +77,10 @@ jobs:
       security-events: write
 
     outputs:
-      image-tag: ${{ steps.build-image.outputs.image-tag }}
-      image-uri: ${{ steps.build-image.outputs.image-uri }}
+      image-tag: ${{ steps.set-mode.outputs.imageTag }}
+      rails-image-uri: ${{ steps.build-rails.outputs.imageUri }}
+      nginx-image-uri: ${{ steps.build-nginx.outputs.imageUri }}
+      deployment-mode: ${{ steps.set-mode.outputs.deploymentMode }}
 
     steps:
       - name: Checkout code
@@ -69,6 +89,26 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Detect mode once, reuse everywhere ──────────────────────────────────
+      - name: Set deployment mode
+        id: set-mode
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+
+          if [ -n "${{ inputs.ecr-repository-nginx }}" ]; then
+            DEPLOYMENT_MODE="double"
+          else
+            DEPLOYMENT_MODE="single"
+          fi
+
+          echo "imageTag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "deploymentMode=$DEPLOYMENT_MODE" >> $GITHUB_OUTPUT
+          echo "ecrRegistry=$ECR_REGISTRY" >> $GITHUB_OUTPUT
+
+          echo "🐳 Deployment Mode: $DEPLOYMENT_MODE"
+          echo "📦 Image Tag: $IMAGE_TAG"
 
       - name: Run Unit Tests
         run: |
@@ -84,56 +124,110 @@ jobs:
           echo "Running SonarQube analysis..."
           echo "✅ SonarQube scan completed successfully"
 
-      - name: Build Docker image
-        id: build-image
+      # ── Rails image (always built) ───────────────────────────────────────────
+      - name: Build Rails Docker image
+        id: build-rails
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ inputs.ecr-repository }}
+          ECR_REGISTRY: ${{ steps.set-mode.outputs.ecrRegistry }}
+          IMAGE_TAG: ${{ steps.set-mode.outputs.imageTag }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ${{ inputs.dockerfile-path }}
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          IMAGE_URI="$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
 
-          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "image-uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
-      - name: Run Trivy vulnerability scanner (SARIF)
+          docker build -t $IMAGE_URI ${{ inputs.dockerfile-path }}
+          docker tag $IMAGE_URI $ECR_REGISTRY/${{ inputs.ecr-repository }}:latest
+
+          echo "imageUri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "✅ Rails image built: $IMAGE_URI"
+
+      - name: Scan Rails image (SARIF)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.build-image.outputs.image-uri }}
+          image-ref: ${{ steps.build-rails.outputs.imageUri }}
           format: 'sarif'
-          output: 'trivy-results.sarif'
+          output: 'trivy-results-rails.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           exit-code: '0'
 
-      - name: Upload Trivy scan results to GitHub Security
+      - name: Upload Rails scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'trivy-results-rails.sarif'
 
-      - name: Run Trivy vulnerability scanner (Table)
+      - name: Scan Rails image (Table)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.build-image.outputs.image-uri }}
+          image-ref: ${{ steps.build-rails.outputs.imageUri }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
           exit-code: '0'
 
-      - name: Push Docker image to Amazon ECR
+      # ── Nginx image (only for double container repos) ────────────────────────
+      - name: Build Nginx Docker image
+        id: build-nginx
+        if: steps.set-mode.outputs.deploymentMode == 'double'
+        env:
+          ECR_REGISTRY: ${{ steps.set-mode.outputs.ecrRegistry }}
+          IMAGE_TAG: ${{ steps.set-mode.outputs.imageTag }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/${{ inputs.ecr-repository-nginx }}:$IMAGE_TAG"
+
+          docker build -t $IMAGE_URI ${{ inputs.dockerfile-path-nginx }}
+          docker tag $IMAGE_URI $ECR_REGISTRY/${{ inputs.ecr-repository-nginx }}:latest
+
+          echo "imageUri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "✅ Nginx image built: $IMAGE_URI"
+
+      - name: Scan Nginx image (SARIF)
+        if: steps.set-mode.outputs.deploymentMode == 'double'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-nginx.outputs.imageUri }}
+          format: 'sarif'
+          output: 'trivy-results-nginx.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Upload Nginx scan results to GitHub Security
+        if: steps.set-mode.outputs.deploymentMode == 'double'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results-nginx.sarif'
+
+      - name: Scan Nginx image (Table)
+        if: steps.set-mode.outputs.deploymentMode == 'double'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-nginx.outputs.imageUri }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      # ── Push images (only on main branch push) ───────────────────────────────
+      - name: Push Rails image to Amazon ECR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ inputs.ecr-repository }}
+          ECR_REGISTRY: ${{ steps.set-mode.outputs.ecrRegistry }}
+          IMAGE_TAG: ${{ steps.set-mode.outputs.imageTag }}
         run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "✅ Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:latest
+          echo "✅ Rails image pushed: $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG"
 
+      - name: Push Nginx image to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.set-mode.outputs.deploymentMode == 'double'
+        env:
+          ECR_REGISTRY: ${{ steps.set-mode.outputs.ecrRegistry }}
+          IMAGE_TAG: ${{ steps.set-mode.outputs.imageTag }}
+        run: |
+          docker push $ECR_REGISTRY/${{ inputs.ecr-repository-nginx }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ inputs.ecr-repository-nginx }}:latest
+          echo "✅ Nginx image pushed: $ECR_REGISTRY/${{ inputs.ecr-repository-nginx }}:$IMAGE_TAG"
+
+  # ── Update config.json and open PR ──────────────────────────────────────────
   update-config-and-create-pr:
     name: Update Config and Create PR
     needs: build-scan-push
-    runs-on: 
+    runs-on:
       - ${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -161,21 +255,39 @@ jobs:
           echo "TEMP_BRANCH=$TEMP_BRANCH" >> $GITHUB_ENV
           echo "✅ Created temporary branch: $TEMP_BRANCH from ${{ inputs.target-branch }}"
 
-      - name: Update config.json
+      # ── Write config.json based on mode ─────────────────────────────────────
+      - name: Update config.json (single container)
+        if: needs.build-scan-push.outputs.deployment-mode == 'single'
         env:
           COMMIT_HASH: ${{ needs.build-scan-push.outputs.image-tag }}
-          IMAGE_URI: ${{ needs.build-scan-push.outputs.image-uri }}
+          RAILS_IMAGE_URI: ${{ needs.build-scan-push.outputs.rails-image-uri }}
         run: |
-          if [ ! -f config.json ]; then
-            echo '{"docker_image_uri":"","commit_hash":""}' > config.json
-            echo "✅ Created new config.json"
-          fi
+          cat > config.json <<EOF
+          {
+            "rails_image_uri": "$RAILS_IMAGE_URI",
+            "commit_hash": "$COMMIT_HASH"
+          }
+          EOF
 
-          jq --arg commit "$COMMIT_HASH" --arg uri "$IMAGE_URI" \
-            '.docker_image_uri = $uri | .commit_hash = $commit' \
-            config.json > config.json.tmp && mv config.json.tmp config.json
+          echo "✅ Updated config.json (single mode):"
+          cat config.json
 
-          echo "✅ Updated config.json:"
+      - name: Update config.json (double container)
+        if: needs.build-scan-push.outputs.deployment-mode == 'double'
+        env:
+          COMMIT_HASH: ${{ needs.build-scan-push.outputs.image-tag }}
+          RAILS_IMAGE_URI: ${{ needs.build-scan-push.outputs.rails-image-uri }}
+          NGINX_IMAGE_URI: ${{ needs.build-scan-push.outputs.nginx-image-uri }}
+        run: |
+          cat > config.json <<EOF
+          {
+            "rails_image_uri": "$RAILS_IMAGE_URI",
+            "nginx_image_uri": "$NGINX_IMAGE_URI",
+            "commit_hash": "$COMMIT_HASH"
+          }
+          EOF
+
+          echo "✅ Updated config.json (double mode):"
           cat config.json
 
       - name: Commit changes
@@ -183,7 +295,9 @@ jobs:
           git add config.json
           git commit -m "chore: update deployment config
 
-          - Image: ${{ needs.build-scan-push.outputs.image-uri }}
+          - Mode: ${{ needs.build-scan-push.outputs.deployment-mode }}
+          - Rails Image: ${{ needs.build-scan-push.outputs.rails-image-uri }}
+          - Nginx Image: ${{ needs.build-scan-push.outputs.nginx-image-uri || 'N/A' }}
           - Commit: ${{ needs.build-scan-push.outputs.image-tag }}
           - Build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
@@ -196,28 +310,34 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
+          NGINX_LINE=""
+          if [ "${{ needs.build-scan-push.outputs.deployment-mode }}" == "double" ]; then
+            NGINX_LINE="- **Nginx Image**: \`${{ needs.build-scan-push.outputs.nginx-image-uri }}\`"
+          fi
+
           gh pr create \
             --base ${{ inputs.target-branch }} \
             --head $TEMP_BRANCH \
             --title "🚀 Deploy: ${{ needs.build-scan-push.outputs.image-tag }}" \
             --body "## Automated Deployment Config Update
 
-          This PR updates \`config.json\` in \`${{ inputs.target-branch }}\` with the latest Docker image from the main branch build.
+          This PR updates \`config.json\` with the latest Docker image(s) from the main branch build.
 
           ### Details
+          - **Mode**: \`${{ needs.build-scan-push.outputs.deployment-mode }} container\`
           - **Commit Hash**: \`${{ needs.build-scan-push.outputs.image-tag }}\`
-          - **Docker Image**: \`${{ needs.build-scan-push.outputs.image-uri }}\`
+          - **Rails Image**: \`${{ needs.build-scan-push.outputs.rails-image-uri }}\`
+          $NGINX_LINE
           - **Build Workflow**: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           - **Triggered By**: @${{ github.actor }}
           - **Source Branch**: \`main\`
           - **Target Branch**: \`${{ inputs.target-branch }}\`
 
           ### Before Merging
-          - [ ] Verify image exists in ECR
+          - [ ] Verify image(s) exist in ECR
           - [ ] Confirm all tests passed in main branch
           - [ ] Check security scans (Trivy results)
           - [ ] Ready to deploy to environment
 
           ---
-
           🤖 *This PR was automatically created by GitHub Actions*"

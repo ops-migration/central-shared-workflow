@@ -3,33 +3,8 @@ name: Reusable CD - Deploy to Amazon ECS
 on:
   workflow_call:
     inputs:
-      aws-region:
-        description: 'AWS Region'
-        required: false
-        type: string
-        default: 'us-east-1'
-      ecs-cluster:
-        description: 'ECS Cluster name'
-        required: true
-        type: string
-      ecs-service:
-        description: 'ECS Service name'
-        required: true
-        type: string
       cf-stack-name:
         description: 'CloudFormation Stack name'
-        required: true
-        type: string
-      target-env:
-        description: 'Target environment (dev/qa/stage/prod)'
-        required: true
-        type: string
-      environment-name:
-        description: 'GitHub Environment name for approval'
-        required: true
-        type: string
-      environment-url:
-        description: 'Environment URL'
         required: true
         type: string
       runner-label:
@@ -93,11 +68,10 @@ jobs:
           aws cloudformation deploy \
             --template-file iac/aws/us-east-1/stack.yaml \
             --stack-name "${{ inputs.cf-stack-name }}" \
-            --region "${{ inputs.aws-region }}" \
+            --region "us-east-1" \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               DockerImageUri="${{ steps.read-config.outputs.dockerImageUri }}" \
-              CommitHash="${{ steps.read-config.outputs.commitHash }}" \
-              EnvironmentUrl="${{ inputs.environment-url }}"
+              CommitHash="${{ steps.read-config.outputs.commitHash }}"
           
           echo "✅ CloudFormation stack updated successfully" 

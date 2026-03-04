@@ -4,8 +4,6 @@ Description: IAM Stack - Task Execution Role
 Parameters:
   Environment:
     Type: String
-  AppName:
-    Type: String
 
 Resources:
   # ── Task Execution Role ────────────────────────────────────────────────────
@@ -13,7 +11,7 @@ Resources:
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Environment}-${AppName}-execution-role
+      RoleName: !Sub ${Environment}-execution-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -38,21 +36,18 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Name
-          Value: !Ref AppName
 
 # ── SSM Parameter Store ────────────────────────────────────────────────────
   SSMExecutionRoleArn:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /cfn/${Environment}/iam/${AppName}/ExecutionRoleArn
+      Name: !Sub /cfn/${Environment}/iam/ExecutionRoleArn
       Type: String
       Value: !GetAtt ECSTaskExecutionRole.Arn
-      Description: !Sub "[${Environment}] ECS Task Execution Role ARN for ${AppName}"
+      Description: !Sub "[${Environment}] ECS Task Execution Role ARN"
       Tags:
         Environment: !Ref Environment
         ManagedBy: CloudFormation
-        AppName: !Ref AppName
 
 Outputs:
   ExecutionRoleArn:

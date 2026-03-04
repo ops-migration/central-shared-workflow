@@ -6,8 +6,6 @@ Parameters:
     Type: String
   VpcId:
     Type: String
-  ALBListenerArn:
-    Type: String
   
   # ── FunctionManager ───────────────────────────────────────────────────────────────────
   FunctionManagerName:
@@ -70,7 +68,7 @@ Resources:
   FunctionManagerListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
-      ListenerArn: !Ref ALBListenerArn
+      ListenerArn: {{resolve:ssm:/cfn/alb/HTTPListenerArn}}
       Priority: !Ref FunctionManagerRulePriority
       Conditions:
         - Field: host-header
@@ -112,7 +110,7 @@ Resources:
   AcquiflowListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
-      ListenerArn: !Ref ALBListenerArn
+      ListenerArn: {{resolve:ssm:/cfn/alb/HTTPListenerArn}}
       Priority: !Ref AcquiflowRulePriority
       Conditions:
         - Field: host-header

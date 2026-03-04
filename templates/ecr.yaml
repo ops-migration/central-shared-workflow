@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECR Repository for Docker Images'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name
+  
+  ImageTagMutability:
+    Type: String
+    Description: The tag mutability setting for the repository
+    AllowedValues:
+      - MUTABLE
+      - IMMUTABLE
+    Default: MUTABLE
+  
+  ScanOnPush:
+    Type: String
+    Description: Enable image scanning on push
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  
+  LifecyclePolicyText:
+    Type: String
+    Description: JSON lifecycle policy for ECR
+    Default: |
+      {
+        "rules": [
+          {
+            "rulePriority": 1,
+            "description": "Keep last 20 images",
+            "selection": {
+              "tagStatus": "any",
+              "countType": "imageCountMoreThan",
+              "countNumber": 20
+            },
+            "action": {
+              "type": "expire"
+            }
+          }
+        ]
+      }
+
+Resources:
+  FunctionManagerECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${Environment}-function-manager
+      ImageTagMutability: !Ref ImageTagMutability
+      ImageScanningConfiguration:
+        ScanOnPush: !Ref ScanOnPush
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref LifecyclePolicyText
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-function-manager
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: AppName
+          Value: function-manager
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  AcquiflowECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${Environment}-acquiflow
+      ImageTagMutability: !Ref ImageTagMutability
+      ImageScanningConfiguration:
+        ScanOnPush: !Ref ScanOnPush
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref LifecyclePolicyText
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-acquiflow
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: AppName
+          Value: acquiflow
+        - Key: ManagedBy
+          Value: CloudFormation

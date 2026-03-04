@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 Nested Stack - Application bucket for dev environment
+
+Parameters:
+  Environment:
+    Type: String
+
+Resources:
+  FunctionManagerS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: ${Environment}-function-manager
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: AppName
+          Value: function-manager
+        - Key: Environment
+          Value: !Ref Environment
+
+  AcquiflowS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: ${Environment}-acquiflow
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: AppName
+          Value: acquiflow
+        - Key: Environment
+          Value: !Ref Environment
+

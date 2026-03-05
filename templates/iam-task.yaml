@@ -1,16 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: IAM Stack - ECS Task Role
+Description: IAM Stack - Generic ECS Task Role (per service)
 
 Parameters:
   Environment:
     Type: String
-    Default: dev
+  AppName:
+    Type: String
+    Description: Service name (e.g. function-manager, acquiflow)
 
 Resources:
-  FunctionManagerECSTaskRole:
+  ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Environment}-function-manager-task-role
+      RoleName: !Sub ${Environment}-${AppName}-task-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -19,63 +21,60 @@ Resources:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub ${Environment}-function-manager-task-policy
+        - PolicyName: !Sub ${Environment}-${AppName}-task-policy
           PolicyDocument:
-            'Fn::Transform':
-              Name: AWS::Include
-              Parameters:
-                Location: 's3://ecs-migration-cloud-formation-templates/templates/policies/iam-function-manager-task-policy.json'
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowReadSecrets
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}-${AppName}*
 
-  AcquiflowECSTaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub ${Environment}-acquiflow-task-role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: !Sub ${Environment}-acquiflow-task-policy
-          PolicyDocument:
-            'Fn::Transform':
-              Name: AWS::Include
-              Parameters:
-                Location: 's3://ecs-migration-cloud-formation-templates/templates/policies/iam-acquiflow-task-policy.json'
+              - Sid: AllowS3AccessToAppBucket
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:aws:s3:::${Environment}-${AppName}/*
+
+              - Sid: AllowS3ListBucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${Environment}-${AppName}
+
+              - Sid: AllowCloudWatchLogsWrite
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: AppName
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: CloudFormation
 
 # ── SSM Parameter Store ────────────────────────────────────────────────────
-  FunctionManagerSSMTaskRoleArn:
+  SSMTaskRoleArn:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /cfn/${Environment}/iam/function-manager/TaskRoleArn
+      Name: !Sub /cfn/${Environment}/iam/${AppName}/TaskRoleArn
       Type: String
-      Value: !GetAtt FunctionManagerECSTaskRole.Arn
-      Description: !Sub "[${Environment}] ECS Task Role ARN for function-manager"
+      Value: !GetAtt ECSTaskRole.Arn
+      Description: !Sub "[${Environment}] ECS Task Role ARN for ${AppName}"
       Tags:
         Environment: !Ref Environment
+        AppName: !Ref AppName
         ManagedBy: CloudFormation
-        AppName: function-manager
-
-  AcquiflowSSMTaskRoleArn:
-    Type: AWS::SSM::Parameter 
-    Properties:
-      Name: !Sub /cfn/${Environment}/iam/acquiflow/TaskRoleArn
-      Type: String
-      Value: !GetAtt AcquiflowECSTaskRole.Arn
-      Description: !Sub "[${Environment}] ECS Task Role ARN for acquiflow"
-      Tags:
-        Environment: !Ref Environment
-        ManagedBy: CloudFormation
-        AppName: acquiflow
 
 Outputs:
-  FunctionManagerTaskRoleArn:
-    Description: Function Manager Task Role ARN
-    Value: !GetAtt FunctionManagerECSTaskRole.Arn
-  AcquiflowTaskRoleArn:
-    Description: Acquiflow Task Role ARN
-    Value: !GetAtt AcquiflowECSTaskRole.Arn
+  TaskRoleArn:
+    Description: ECS Task Role ARN
+    Value: !GetAtt ECSTaskRole.Arn
     Export:
       Name: !Sub ${AWS::StackName}-TaskRoleArn

@@ -5,6 +5,10 @@ Parameters:
   Environment:
     Type: String
     Description: Environment name
+
+  RepoName:
+    Type: String
+    Description: Name of the application/service (e.g. function-manager, acquiflow)
   
   ImageTagMutability:
     Type: String
@@ -44,10 +48,10 @@ Parameters:
       }
 
 Resources:
-  FunctionManagerECRRepository:
+  ECRRepository:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub ${Environment}-function-manager
+      RepositoryName: !Sub ${Environment}-${RepoName}
       ImageTagMutability: !Ref ImageTagMutability
       ImageScanningConfiguration:
         ScanOnPush: !Ref ScanOnPush
@@ -55,29 +59,10 @@ Resources:
         LifecyclePolicyText: !Ref LifecyclePolicyText
       Tags:
         - Key: Name
-          Value: !Sub ${Environment}-function-manager
+          Value: !Sub ${Environment}-${RepoName} 
         - Key: Environment
           Value: !Ref Environment
         - Key: AppName
-          Value: function-manager
-        - Key: ManagedBy
-          Value: CloudFormation
-
-  AcquiflowECRRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub ${Environment}-acquiflow
-      ImageTagMutability: !Ref ImageTagMutability
-      ImageScanningConfiguration:
-        ScanOnPush: !Ref ScanOnPush
-      LifecyclePolicy:
-        LifecyclePolicyText: !Ref LifecyclePolicyText
-      Tags:
-        - Key: Name
-          Value: !Sub ${Environment}-acquiflow
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: AppName
-          Value: acquiflow
+          Value: !Ref RepoName  
         - Key: ManagedBy
           Value: CloudFormation

@@ -25,7 +25,7 @@ Parameters:
 Mappings:
   AWSRegionToAMI:
     us-east-1:
-      AMIID: ami-0071c8c431eea0edb
+      AMIID: ami-0aae19d30bab785d3
 
 Resources:
 

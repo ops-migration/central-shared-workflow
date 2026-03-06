@@ -9,7 +9,6 @@ on:
       stacks-path:
         required: false
         type: string
-        default: 'iac/aws/us-east-1/stacks'
 
 jobs:
   deploy:

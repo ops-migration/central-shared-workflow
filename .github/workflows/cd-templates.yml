@@ -10,9 +10,7 @@ on:
         required: false
         type: string
         default: 'iac/aws/us-east-1/stacks'
-      stack-name:
-        required: false
-        type: string
+=
 
 jobs:
   deploy:
@@ -60,6 +58,7 @@ jobs:
         run: |
           for f in ${{ steps.changes.outputs.changed }}; do
             filename=$(basename "$f" .yaml)
+            stack_name="${{ inputs.environment }}-${filename}"
 
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "Deploying: $f  →  Stack: $stack_name"
@@ -67,12 +66,12 @@ jobs:
 
             aws cloudformation deploy \
               --template-file "$f" \
-              --stack-name "$stack-name" \
+              --stack-name "$stack_name" \
               --region "us-east-1" \
               --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
               --no-fail-on-empty-changeset
 
-            echo "✅ $stack-name deployed successfully"
+            echo "✅ $stack_name deployed successfully"
           done
 
       - name: No changes detected

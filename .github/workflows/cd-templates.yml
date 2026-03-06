@@ -32,9 +32,19 @@ jobs:
       - name: Get changed stack files
         id: changes
         run: |
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} \
-            | grep "^${{ inputs.stacks-path }}/.*\.yaml$" \
-            || true)
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+
+          # First push to a branch — before SHA is all zeros
+          if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+            echo "First push detected — deploying all stack files"
+            CHANGED=$(find "${{ inputs.stacks-path }}" -name "*.yaml" | tr '\n' ' ')
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" \
+              | grep "^${{ inputs.stacks-path }}/.*\.yaml$" \
+              || true)
+          fi
+
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
           echo "Changed files: $CHANGED"
 
@@ -43,10 +53,10 @@ jobs:
         run: |
           for f in ${{ steps.changes.outputs.changed }}; do
             filename=$(basename "$f" .yaml)
-            stack_name="${{ inputs.environment }}-stack"
+            stack_name="${{ inputs.environment }}-${filename}"
 
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Deploying: $f → Stack: $stack_name"
+            echo "Deploying: $f  →  Stack: $stack_name"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
             aws cloudformation deploy \

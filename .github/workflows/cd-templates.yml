@@ -1,20 +1,23 @@
+# github_shared_templates: .github/workflows/cd-templates.yml
+
 name: Reusable CD - Deploy CloudFormation Stacks
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: 'Deployment environment (dev, qa, prod)'
         required: true
         type: string
       stacks-path:
-        description: 'Path to the folder containing stack YAML files'
         required: false
         type: string
         default: 'iac/aws/us-east-1'
+      commits-json:
+        description: 'Raw JSON of github.event.commits from caller'
+        required: true
+        type: string
     secrets:
       github-token:
-        description: 'GitHub token to checkout the caller repo'
         required: true
 
 jobs:
@@ -28,41 +31,33 @@ jobs:
       id-token: none
 
     steps:
-      # ✅ Checkout the CALLER's repo (core-infrastructure), not this shared repo
       - name: Checkout caller repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository }}   # core-infrastructure
-          ref: ${{ github.sha }}                  # exact commit that triggered
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
           token: ${{ secrets.github-token }}
-          fetch-depth: 0                          # full history for git diff
+          fetch-depth: 1
 
-      - name: Get changed stack files
-        id: changes
+      - name: Detect and deploy changed stacks
         run: |
-          if git rev-parse HEAD~1 > /dev/null 2>&1; then
-            echo "Comparing HEAD~1 → HEAD"
-            CHANGED=$(git diff --name-only HEAD~1 HEAD \
-              | grep "^${{ inputs.stacks-path }}/.*\.yaml$" \
-              | tr '\n' ' ' \
-              || true)
-          else
-            echo "First commit on branch — deploying all stack files"
-            CHANGED=$(find "${{ inputs.stacks-path }}" -name "*.yaml" \
-              | tr '\n' ' ')
-          fi
+          # Parse changed YAML files from commits JSON
+          CHANGED=$(echo '${{ inputs.commits-json }}' \
+            | jq -r '[.[].added[], .[].modified[]] | .[]' \
+            | grep "^${{ inputs.stacks-path }}/.*\.yaml$" \
+            | tr '\n' ' ' \
+            || true)
 
           echo "Changed files: $CHANGED"
-          echo "changed<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGED"     >> $GITHUB_OUTPUT
-          echo "EOF"          >> $GITHUB_OUTPUT
 
-      - name: Deploy changed stacks
-        if: steps.changes.outputs.changed != ''
-        run: |
-          for f in ${{ steps.changes.outputs.changed }}; do
+          if [ -z "$CHANGED" ]; then
+            echo "ℹ️ No stack files changed — nothing to deploy"
+            exit 0
+          fi
+
+          for f in $CHANGED; do
             if [ ! -f "$f" ]; then
-              echo "⚠️  Skipping $f — file no longer exists"
+              echo "⚠️  Skipping $f — file not found"
               continue
             fi
 
@@ -83,6 +78,68 @@ jobs:
             echo "✅ $stack_name deployed successfully"
           done
 
-      - name: No changes detected
-        if: steps.changes.outputs.changed == ''
-        run: echo "ℹ️ No stack files changed — nothing to deploy"
+# name: Reusable CD - Deploy CloudFormation Stacks
+
+# on:
+#   workflow_call:
+#     inputs:
+#       environment:
+#         required: true
+#         type: string
+#       stacks-path:
+#         required: false
+#         type: string
+#         default: 'iac/aws/us-east-1'
+#       changed-files:
+#         description: 'Space-separated list of changed YAML files'
+#         required: true
+#         type: string
+#     secrets:
+#       github-token:
+#         required: true
+
+# jobs:
+#   deploy:
+#     name: Deploying CloudFormation Stacks
+#     runs-on:
+#       - codebuild-ecs-workflow-${{ github.run_id }}-${{ github.run_attempt }}
+
+#     permissions:
+#       contents: read
+#       id-token: none
+
+#     steps:
+#       - name: Checkout caller repository
+#         uses: actions/checkout@v4
+#         with:
+#           repository: ${{ github.repository }}
+#           ref: ${{ github.sha }}
+#           token: ${{ secrets.github-token }}
+#           fetch-depth: 1
+
+#       - name: Deploy changed stacks
+#         run: |
+#           FILES="${{ inputs.changed-files }}"
+
+#           for f in $FILES; do
+#             if [ ! -f "$f" ]; then
+#               echo "⚠️  Skipping $f — file not found"
+#               continue
+#             fi
+
+#             filename=$(basename "$f" .yaml)
+#             stack_name="${{ inputs.environment }}-${filename}"
+
+#             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#             echo "Deploying: $f  →  Stack: $stack_name"
+#             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+#             aws cloudformation deploy \
+#               --template-file "$f" \
+#               --stack-name "$stack_name" \
+#               --region "us-east-1" \
+#               --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+#               --no-fail-on-empty-changeset
+
+#             echo "✅ $stack_name deployed successfully"
+#           done
